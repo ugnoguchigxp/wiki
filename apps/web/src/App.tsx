@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MarkdownEditor } from "markdown-wysiwyg-editor";
+import mermaid from "mermaid";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -33,6 +34,8 @@ const formatDate = (value: string): string => {
 
 const isJsonObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+mermaid.initialize({ startOnLoad: false });
 
 const App = () => {
   const queryClient = useQueryClient();
@@ -479,6 +482,7 @@ const App = () => {
               className="h-full"
               enableVerticalScroll
               enableMermaid
+              mermaidLib={mermaid}
             />
           </div>
         </section>

@@ -30,6 +30,7 @@ export const filePathToSlug = (relativePath: string): string => {
 
 export const sanitizeSlug = (slug: string): string =>
   slug
+    .trim()
     .replace(/\\/g, "/")
     .replace(/^\/+|\/+$/g, "")
     .replace(/\/+/g, "/");

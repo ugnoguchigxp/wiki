@@ -17,6 +17,7 @@ export type PageTreeItem = {
   slug: string;
   title: string;
   path: string;
+  updatedAt: Date;
 };
 
 export type PageDocument = {
@@ -30,6 +31,13 @@ export type PageDocument = {
 const pagesDirectory = (contentRoot: string) => path.resolve(contentRoot, "pages");
 
 const normalizePosixPath = (targetPath: string): string => targetPath.split(path.sep).join("/");
+
+const isNotFoundError = (error: unknown): boolean => {
+  if (!(error instanceof Error) || !("code" in error)) {
+    return false;
+  }
+  return error.code === "ENOENT" || error.code === "ENOTDIR";
+};
 
 const assertInsidePages = (contentRoot: string, relativePath: string): string => {
   const pagesRoot = pagesDirectory(contentRoot);
@@ -66,9 +74,11 @@ export const getGitSummary = async (contentRoot: string): Promise<GitSummary> =>
   }
 };
 
-const readMarkdownFiles = async (root: string): Promise<string[]> => {
+const readMarkdownFiles = async (
+  root: string,
+): Promise<Array<{ filePath: string; updatedAt: Date }>> => {
   const entries = await fs.readdir(root, { withFileTypes: true });
-  const results: string[] = [];
+  const results: Array<{ filePath: string; updatedAt: Date }> = [];
 
   for (const entry of entries) {
     const fullPath = path.resolve(root, entry.name);
@@ -78,7 +88,8 @@ const readMarkdownFiles = async (root: string): Promise<string[]> => {
       continue;
     }
     if (entry.isFile() && entry.name.endsWith(".md")) {
-      results.push(fullPath);
+      const stat = await fs.stat(fullPath);
+      results.push({ filePath: fullPath, updatedAt: stat.mtime });
     }
   }
   return results;
@@ -88,24 +99,17 @@ export const listPages = async (contentRoot: string): Promise<PageTreeItem[]> =>
   const pagesRoot = pagesDirectory(contentRoot);
   const files = await readMarkdownFiles(pagesRoot);
 
-  const items = await Promise.all(
-    files.map(async (filePath) => {
-      const relativePath = path.relative(pagesRoot, filePath);
-      const slug = filePathToSlug(relativePath);
-      const raw = await fs.readFile(filePath, "utf8");
-      const parsed = matter(raw);
-      const title =
-        typeof parsed.data.title === "string" && parsed.data.title.length > 0
-          ? parsed.data.title
-          : slug || "Home";
+  const items: PageTreeItem[] = files.map((file) => {
+    const relativePath = path.relative(pagesRoot, file.filePath);
+    const slug = filePathToSlug(relativePath);
 
-      return {
-        slug,
-        title,
-        path: normalizePosixPath(relativePath),
-      };
-    }),
-  );
+    return {
+      slug,
+      title: slug || "Home", // Default to slug, will be updated during indexing
+      path: normalizePosixPath(relativePath),
+      updatedAt: file.updatedAt,
+    };
+  });
 
   return items.sort((a, b) => a.slug.localeCompare(b.slug));
 };
@@ -139,8 +143,10 @@ export const findExistingPageRelativePath = async (
       if (stat.isFile()) {
         return normalizePosixPath(candidate);
       }
-    } catch {
-      // continue
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
     }
   }
 
@@ -170,8 +176,10 @@ export const readPage = async (contentRoot: string, slug: string): Promise<PageD
         path: normalizedPath,
         meta: parsed.data as Record<string, unknown>,
       };
-    } catch {
-      // try next candidate
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
     }
   }
 
@@ -243,8 +251,10 @@ export const deletePage = async (contentRoot: string, slug: string): Promise<str
       await fs.rm(candidate);
       await removeEmptyParentDirectories(contentRoot, candidate);
       return candidate;
-    } catch {
-      // continue
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
     }
   }
 

@@ -60,7 +60,7 @@ wiki/
   pnpm-workspace.yaml
 ```
 
-`/Users/y.noguchi/Code/wiki-knowledge`（別Git、コンテンツ専用）
+`/Users/y.noguchi/Code/wiki/wiki-knowledge`（アプリ配下だが別Git、コンテンツ専用）
 
 ```txt
 wiki-knowledge/
@@ -76,7 +76,9 @@ wiki-knowledge/
 
 ポイント:
 - アプリRepoとコンテンツRepoを分離し、チーム共有は `wiki-knowledge` を pull/push する。
-- アプリ設定で `contentRoot=/Users/y.noguchi/Code/wiki-knowledge` を指定。
+- アプリRepo側の `.gitignore` で `wiki-knowledge/` を除外し、親Gitにはコンテンツを載せない。
+- デフォルトは `CONTENT_ROOT=wiki-knowledge` とし、相対パスはアプリRepoルート基準で解決する。
+- `.env` / `.env.local` で `CONTENT_ROOT`, `DATA_DIR`, `DATABASE_PATH` を上書きできる。外部コンテンツRepoを使う場合は絶対パスも指定可能。
 
 ## 4. 技術スタック
 
@@ -238,7 +240,7 @@ TanStack Query:
   - 初期は `MarkdownEditor editable={false}` を採用。
   - 表示専用軽量化が必要になれば `StaticHtmlGenerator` + 専用表示に分離。
 - 画像:
-  - `onImageSourceSelect` で `wiki-knowledge/assets/images` へ保存するAPIに接続。
+  - `onImageSourceSelect` で `${CONTENT_ROOT}/assets/images` へ保存するAPIに接続。
 - Mermaid:
   - `enableMermaid=true` をオプション化。
 
@@ -278,7 +280,7 @@ TanStack Query:
 - `markdown-wysiwyg-editor` のCSS読み込み確認
 - Biome 初期化（format/lint/check scripts）
 - `wiki-knowledge` 作成、`git init`、初期 `pages/index.md`、`.wiki/config.yaml`、初回commit
-- `.env.local` と `contentRoot` 設定
+- `.env.example` に `CONTENT_ROOT=wiki-knowledge` を明示し、必要に応じて `.env.local` で上書き
 
 完了条件:
 - `pnpm dev` で Web を `apps/api/public` に出力し、API 1ポートで起動

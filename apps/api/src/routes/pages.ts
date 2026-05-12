@@ -3,13 +3,13 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { appConfig } from "../config.js";
 import { getDb } from "../db/client.js";
+import { pages } from "../db/schema.js";
 import {
   commitDeleteChange,
   commitFileChange,
   deletePage,
   getPageDiff,
   getPageHistory,
-  listPages,
   readPage,
   writePage,
 } from "../lib/content-repo.js";
@@ -60,8 +60,18 @@ const isInvalidSlug = (slug: string): boolean => !isSafeSlug(slug);
 
 export const registerPageRoutes = (app: Hono) => {
   app.get("/api/pages/tree", async (c) => {
-    const pages = await listPages(appConfig.contentRoot);
-    return c.json({ items: pages });
+    const db = await getDb();
+    const records = await db
+      .select({
+        slug: pages.slug,
+        title: pages.title,
+        path: pages.path,
+        updatedAt: pages.updatedAt,
+      })
+      .from(pages)
+      .orderBy(pages.slug);
+
+    return c.json({ items: records });
   });
 
   app.get("/api/pages/*", async (c) => {

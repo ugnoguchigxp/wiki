@@ -191,6 +191,29 @@ describe("api", () => {
     expect(malformedReadRes.status).toBe(400);
   });
 
+  it("normalizes safe slug input before writing files", async () => {
+    const app = createApp();
+
+    const createRes = await app.request("http://localhost/api/pages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slug: " /guides//release/ ",
+        title: "Release Guide",
+        body: "Normalized slug content",
+      }),
+    });
+
+    expect(createRes.status).toBe(200);
+    const createBody = await createRes.json();
+    expect(createBody.slug).toBe("guides/release");
+
+    const pageRes = await app.request("http://localhost/api/pages/guides/release");
+    expect(pageRes.status).toBe(200);
+    const pageBody = await pageRes.json();
+    expect(pageBody.path).toBe("guides/release.md");
+  });
+
   it("reindex rebuilds search and removes stale rows", async () => {
     const app = createApp();
 

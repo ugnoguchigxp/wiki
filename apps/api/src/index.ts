@@ -24,6 +24,7 @@ const bootstrap = async () => {
     {
       fetch: app.fetch,
       port: appConfig.port,
+      hostname: "127.0.0.1",
     },
     (info) => {
       console.log(`wiki-api listening on http://localhost:${info.port}`);

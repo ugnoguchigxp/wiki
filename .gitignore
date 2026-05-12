@@ -17,6 +17,9 @@ apps/web/dist
 .env.*.local
 !.env.example
 
+# Local content repository
+wiki-knowledge/
+
 # OS files
 .DS_Store
 Thumbs.db

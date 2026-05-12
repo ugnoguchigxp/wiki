@@ -136,13 +136,14 @@ export const upsertPageIndex = async (
   page: PageDocument,
   lastCommit: string | null,
   contentHash?: string,
+  mtime?: Date,
 ): Promise<void> => {
   await ensureFtsTable(db);
 
   const hash = contentHash ?? computePageHash(page);
   const meta = normalizeMeta(page.meta);
   const pageLinksList = extractWikiLinks(page.body);
-  const now = new Date();
+  const updatedAt = mtime ?? new Date();
 
   await db
     .insert(pages)
@@ -152,7 +153,7 @@ export const upsertPageIndex = async (
       title: page.title,
       path: page.path,
       contentHash: hash,
-      updatedAt: now,
+      updatedAt: updatedAt,
       lastCommit,
     })
     .onConflictDoUpdate({
@@ -161,7 +162,7 @@ export const upsertPageIndex = async (
         title: page.title,
         path: page.path,
         contentHash: hash,
-        updatedAt: now,
+        updatedAt: updatedAt,
         lastCommit,
       },
     });
@@ -264,21 +265,28 @@ export const reindexAllPages = async (
 
   const listed = await listPages(contentRoot);
   const gitSummary = await getGitSummary(contentRoot);
-  const currentSlugs = new Set<string>();
+  const currentSlugs = new Set<string>(listed.map((item) => item.slug));
 
-  let indexed = 0;
-  for (const item of listed) {
+  const existingRecords = await db
+    .select({ slug: pages.slug, updatedAt: pages.updatedAt })
+    .from(pages);
+
+  const tasks = listed.map(async (item) => {
     const page = await readPage(contentRoot, item.slug);
     if (!page) {
-      continue;
+      return false;
     }
-    currentSlugs.add(page.slug);
-    await upsertPageIndex(db, page, gitSummary?.commit ?? null);
-    indexed += 1;
-  }
 
-  const existing = await db.select({ slug: pages.slug }).from(pages);
-  const staleSlugs = existing.map((row) => row.slug).filter((slug) => !currentSlugs.has(slug));
+    await upsertPageIndex(db, page, gitSummary?.commit ?? null, undefined, item.updatedAt);
+    return true;
+  });
+
+  const results = await Promise.all(tasks);
+  const indexed = results.filter(Boolean).length;
+
+  const staleSlugs = existingRecords
+    .map((row) => row.slug)
+    .filter((slug) => !currentSlugs.has(slug));
 
   if (staleSlugs.length > 0) {
     await db.delete(pageLinks).where(inArray(pageLinks.fromSlug, staleSlugs));

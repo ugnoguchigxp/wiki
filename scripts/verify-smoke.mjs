@@ -1,5 +1,7 @@
 import { createServer } from "node:net";
 import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -53,6 +55,15 @@ const requestText = async (url) => {
   return { response, text };
 };
 
+const waitForExit = (processToWait) =>
+  new Promise((resolveExit) => {
+    if (processToWait.exitCode !== null || processToWait.signalCode !== null) {
+      resolveExit();
+      return;
+    }
+    processToWait.once("exit", () => resolveExit());
+  });
+
 const assert = (condition, message) => {
   if (!condition) {
     throw new Error(message);
@@ -65,11 +76,22 @@ if (!existsSync(apiEntry) || !existsSync(publicIndex)) {
 
 const port = String(await getFreePort());
 const baseUrl = `http://127.0.0.1:${port}`;
+const contentRoot = await mkdtemp(resolve(tmpdir(), "wiki-smoke-"));
+await mkdir(resolve(contentRoot, "pages"), { recursive: true });
+await mkdir(resolve(contentRoot, ".wiki"), { recursive: true });
+await writeFile(
+  resolve(contentRoot, "pages/index.md"),
+  "---\ntitle: Smoke Home\n---\n# Smoke Wiki\n\nThis page verifies wiki search.\n",
+  "utf8",
+);
+
 const child = spawn(process.execPath, [apiEntry], {
   cwd: rootDir,
   env: {
     ...process.env,
     PORT: port,
+    CONTENT_ROOT: contentRoot,
+    DATABASE_PATH: resolve(contentRoot, ".wiki/wiki.sqlite"),
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -107,10 +129,15 @@ try {
   console.error(output.trim());
   throw error;
 } finally {
-  child.kill("SIGTERM");
-  setTimeout(() => {
-    if (!child.killed) {
-      child.kill("SIGKILL");
-    }
-  }, 1_000).unref();
+  if (child.exitCode === null && child.signalCode === null) {
+    child.kill("SIGTERM");
+    const killTimer = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+      }
+    }, 1_000);
+    await waitForExit(child);
+    clearTimeout(killTimer);
+  }
+  await rm(contentRoot, { recursive: true, force: true });
 }
