@@ -1,0 +1,40 @@
+{
+  "name": "@wiki/web",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "vite --port 5173",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "lint": "biome check --formatter-enabled=false src vite.config.ts vitest.config.ts",
+    "format:check": "biome check --linter-enabled=false --assist-enabled=false src vite.config.ts vitest.config.ts",
+    "format": "biome format --write src vite.config.ts vitest.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.10",
+    "@wiki/shared": "workspace:*",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "markdown-wysiwyg-editor": "^0.3.7",
+    "mermaid": "^11.12.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.17",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.0",
+    "jsdom": "^26.1.0",
+    "tailwindcss": "^4.1.17",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2",
+    "vitest": "^3.2.4"
+  }
+}

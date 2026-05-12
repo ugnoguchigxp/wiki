@@ -1,0 +1,26 @@
+{
+  "name": "wiki",
+  "private": true,
+  "packageManager": "pnpm@10.24.0",
+  "scripts": {
+    "dev": "pnpm build:public && pnpm --filter @wiki/api dev",
+    "build": "pnpm build:public && pnpm --filter @wiki/api build",
+    "build:public": "pnpm --filter @wiki/web build",
+    "start": "pnpm build && pnpm --filter @wiki/api start",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm build && pnpm smoke",
+    "format:check": "pnpm -r format:check",
+    "lint": "pnpm -r lint",
+    "format": "pnpm -r format",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:unit": "pnpm -r test:unit",
+    "smoke": "node scripts/verify-smoke.mjs",
+    "check": "pnpm lint && pnpm test",
+    "db:push": "pnpm --filter @wiki/api db:push",
+    "reindex": "pnpm --filter @wiki/api reindex"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
+    "typescript": "^5.9.3"
+  }
+}

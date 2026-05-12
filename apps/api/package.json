@@ -1,0 +1,35 @@
+{
+  "name": "@wiki/api",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "lint": "biome check --formatter-enabled=false src drizzle.config.ts",
+    "format:check": "biome check --linter-enabled=false --assist-enabled=false src drizzle.config.ts",
+    "format": "biome format --write src drizzle.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "db:push": "drizzle-kit push --config=drizzle.config.ts",
+    "reindex": "tsx src/scripts/reindex.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.6",
+    "@hono/zod-validator": "^0.7.5",
+    "better-sqlite3": "^12.4.1",
+    "drizzle-orm": "^0.45.2",
+    "gray-matter": "^4.0.3",
+    "hono": "^4.10.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.10.1",
+    "drizzle-kit": "^0.31.7",
+    "tsx": "^4.20.6",
+    "vitest": "^3.2.4"
+  }
+}

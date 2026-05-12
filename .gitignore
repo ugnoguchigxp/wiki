@@ -1,0 +1,53 @@
+# Dependencies
+node_modules
+.pnpm-debug.log*
+
+# Build outputs
+dist
+dist-ssr
+apps/api/public
+apps/web/dist
+*.tsbuildinfo
+.turbo
+.cache
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDEs
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+.idea
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage
+.nyc_output
+
+# Database (SQLite)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+
+# Tools
+.biome_cache

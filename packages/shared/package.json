@@ -1,0 +1,23 @@
+{
+  "name": "@wiki/shared",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check --formatter-enabled=false src",
+    "format:check": "biome check --linter-enabled=false --assist-enabled=false src",
+    "format": "biome format --write src",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}
