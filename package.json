@@ -3,7 +3,8 @@
   "private": true,
   "packageManager": "pnpm@10.24.0",
   "scripts": {
-    "dev": "pnpm build:public && pnpm --filter @wiki/api dev",
+    "dev": "npm run security-scan && pnpm --filter @wiki/web dev",
+    "security-scan": "node scripts/security-scan.mjs",
     "build": "pnpm build:public && pnpm --filter @wiki/api build",
     "build:public": "pnpm --filter @wiki/web build",
     "start": "pnpm build && pnpm --filter @wiki/api start",

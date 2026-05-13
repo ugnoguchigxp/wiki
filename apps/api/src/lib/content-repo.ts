@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import matter from "gray-matter";
+import { sanitizeMarkdownBody, sanitizePlainText } from "./sanitize.js";
 import { assertSafeSlug, filePathToSlug } from "./slug.js";
 
 const execFileAsync = promisify(execFile);
@@ -18,6 +19,15 @@ export type PageTreeItem = {
   title: string;
   path: string;
   updatedAt: Date;
+};
+
+export type FolderTreeItem = {
+  path: string;
+};
+
+export type MovedPage = {
+  from: string;
+  to: string;
 };
 
 export type PageDocument = {
@@ -50,6 +60,14 @@ const assertInsidePages = (contentRoot: string, relativePath: string): string =>
   }
 
   return absolute;
+};
+
+const assertSafeFolderPath = (folderPath: string): string => {
+  const safe = assertSafeSlug(folderPath);
+  if (safe === "") {
+    throw new Error("Invalid folder path");
+  }
+  return safe;
 };
 
 export const ensureContentRoot = async (contentRoot: string): Promise<void> => {
@@ -95,6 +113,24 @@ const readMarkdownFiles = async (
   return results;
 };
 
+const readFolderPaths = async (root: string, base = root): Promise<string[]> => {
+  const entries = await fs.readdir(root, { withFileTypes: true });
+  const results: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const fullPath = path.resolve(root, entry.name);
+    const relativePath = normalizePosixPath(path.relative(base, fullPath));
+    results.push(relativePath);
+    results.push(...(await readFolderPaths(fullPath, base)));
+  }
+
+  return results;
+};
+
 export const listPages = async (contentRoot: string): Promise<PageTreeItem[]> => {
   const pagesRoot = pagesDirectory(contentRoot);
   const files = await readMarkdownFiles(pagesRoot);
@@ -112,6 +148,13 @@ export const listPages = async (contentRoot: string): Promise<PageTreeItem[]> =>
   });
 
   return items.sort((a, b) => a.slug.localeCompare(b.slug));
+};
+
+export const listFolders = async (contentRoot: string): Promise<FolderTreeItem[]> => {
+  const folders = await readFolderPaths(pagesDirectory(contentRoot));
+  return folders
+    .map((folderPath) => ({ path: folderPath }))
+    .sort((a, b) => a.path.localeCompare(b.path));
 };
 
 export const resolveCandidateRelativePaths = (slug: string): string[] => {
@@ -189,14 +232,29 @@ export const readPage = async (contentRoot: string, slug: string): Promise<PageD
 const serializeMarkdown = (title: string, body: string, meta: Record<string, unknown>): string => {
   const mergedMeta: Record<string, unknown> = {
     ...meta,
-    title,
+    title: sanitizePlainText(title),
   };
-  const compiled = matter.stringify(body.endsWith("\n") ? body : `${body}\n`, mergedMeta);
+  const sanitizedBody = sanitizeMarkdownBody(body);
+  const compiled = matter.stringify(
+    sanitizedBody.endsWith("\n") ? sanitizedBody : `${sanitizedBody}\n`,
+    mergedMeta,
+  );
   return compiled;
 };
 
-const resolveWritePath = (contentRoot: string, slug: string): string => {
+const resolveWritePath = (contentRoot: string, slug: string, relativePath?: string): string => {
   const safe = assertSafeSlug(slug);
+  if (relativePath) {
+    const normalizedRelativePath = normalizePosixPath(relativePath);
+    if (
+      !normalizedRelativePath.endsWith(".md") ||
+      filePathToSlug(normalizedRelativePath) !== safe
+    ) {
+      throw new Error("Existing page path does not match slug");
+    }
+    return assertInsidePages(contentRoot, normalizedRelativePath);
+  }
+
   const relative = safe === "" ? "index.md" : `${safe}.md`;
   return assertInsidePages(contentRoot, relative);
 };
@@ -207,8 +265,9 @@ export const writePage = async (
   title: string,
   body: string,
   meta: Record<string, unknown>,
+  options: { relativePath?: string } = {},
 ): Promise<{ path: string; hash: string }> => {
-  const targetPath = resolveWritePath(contentRoot, slug);
+  const targetPath = resolveWritePath(contentRoot, slug, options.relativePath);
   await fs.mkdir(path.dirname(targetPath), { recursive: true });
 
   const output = serializeMarkdown(title, body, meta);
@@ -261,6 +320,124 @@ export const deletePage = async (contentRoot: string, slug: string): Promise<str
   throw new Error("Page not found");
 };
 
+export const createFolder = async (
+  contentRoot: string,
+  folderPath: string,
+): Promise<{ path: string; keepFilePath: string }> => {
+  const safe = assertSafeFolderPath(folderPath);
+  const folderAbsolutePath = assertInsidePages(contentRoot, safe);
+
+  try {
+    const stat = await fs.stat(folderAbsolutePath);
+    if (stat.isDirectory()) {
+      throw new Error("Folder already exists");
+    }
+    throw new Error("Folder path conflicts with a file");
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+  }
+
+  await fs.mkdir(folderAbsolutePath, { recursive: true });
+  const keepFilePath = path.join(folderAbsolutePath, ".gitkeep");
+  await fs.writeFile(keepFilePath, "", "utf8");
+
+  return {
+    path: safe,
+    keepFilePath,
+  };
+};
+
+const listPagesUnderFolder = async (
+  contentRoot: string,
+  folderPath: string,
+): Promise<PageTreeItem[]> => {
+  const safe = assertSafeFolderPath(folderPath);
+  const pages = await listPages(contentRoot);
+  return pages.filter((page) => page.path.startsWith(`${safe}/`));
+};
+
+export const deleteFolder = async (
+  contentRoot: string,
+  folderPath: string,
+): Promise<{ path: string; absolutePath: string; deletedSlugs: string[] }> => {
+  const safe = assertSafeFolderPath(folderPath);
+  const folderAbsolutePath = assertInsidePages(contentRoot, safe);
+  const stat = await fs.stat(folderAbsolutePath);
+  if (!stat.isDirectory()) {
+    throw new Error("Folder not found");
+  }
+
+  const deletedSlugs = (await listPagesUnderFolder(contentRoot, safe)).map((page) => page.slug);
+  await fs.rm(folderAbsolutePath, { recursive: true });
+  await removeEmptyParentDirectories(contentRoot, folderAbsolutePath);
+
+  return {
+    path: safe,
+    absolutePath: folderAbsolutePath,
+    deletedSlugs,
+  };
+};
+
+export const renameFolder = async (
+  contentRoot: string,
+  folderPath: string,
+  targetFolderPath: string,
+): Promise<{
+  path: string;
+  from: string;
+  oldAbsolutePath: string;
+  newAbsolutePath: string;
+  movedPages: MovedPage[];
+}> => {
+  const source = assertSafeFolderPath(folderPath);
+  const target = assertSafeFolderPath(targetFolderPath);
+  if (source === target) {
+    throw new Error("Folder path is unchanged");
+  }
+  if (target.startsWith(`${source}/`)) {
+    throw new Error("Cannot move a folder into itself");
+  }
+
+  const oldAbsolutePath = assertInsidePages(contentRoot, source);
+  const newAbsolutePath = assertInsidePages(contentRoot, target);
+  const oldStat = await fs.stat(oldAbsolutePath);
+  if (!oldStat.isDirectory()) {
+    throw new Error("Folder not found");
+  }
+
+  try {
+    await fs.stat(newAbsolutePath);
+    throw new Error("Folder already exists");
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+  }
+
+  const movedPages = (await listPagesUnderFolder(contentRoot, source)).map((page) => {
+    const suffix = page.path.slice(source.length + 1);
+    const targetPath = path.posix.join(target, suffix);
+    return {
+      from: page.slug,
+      to: filePathToSlug(targetPath),
+    };
+  });
+
+  await fs.mkdir(path.dirname(newAbsolutePath), { recursive: true });
+  await fs.rename(oldAbsolutePath, newAbsolutePath);
+  await removeEmptyParentDirectories(contentRoot, oldAbsolutePath);
+
+  return {
+    path: target,
+    from: source,
+    oldAbsolutePath,
+    newAbsolutePath,
+    movedPages,
+  };
+};
+
 const runGit = async (
   contentRoot: string,
   args: string[],
@@ -270,6 +447,18 @@ const runGit = async (
 const hasStagedChanges = async (contentRoot: string, relativePath: string): Promise<boolean> => {
   try {
     await runGit(contentRoot, ["diff", "--cached", "--quiet", "--", relativePath]);
+    return false;
+  } catch {
+    return true;
+  }
+};
+
+const hasAnyStagedChanges = async (
+  contentRoot: string,
+  relativePaths: string[],
+): Promise<boolean> => {
+  try {
+    await runGit(contentRoot, ["diff", "--cached", "--quiet", "--", ...relativePaths]);
     return false;
   } catch {
     return true;
@@ -317,6 +506,26 @@ export const commitDeleteChange = async (
     await runGit(contentRoot, ["commit", "-m", message]);
   } catch (error) {
     if (await hasStagedChanges(contentRoot, normalizedRelative)) {
+      throw error;
+    }
+  }
+  const summary = await getGitSummary(contentRoot);
+  return summary?.commit ?? null;
+};
+
+export const commitPathsChange = async (
+  contentRoot: string,
+  absolutePaths: string[],
+  message: string,
+): Promise<string | null> => {
+  const normalizedRelatives = absolutePaths.map((absolutePath) =>
+    normalizePosixPath(path.relative(contentRoot, absolutePath)),
+  );
+  await runGit(contentRoot, ["add", "-A", "--", ...normalizedRelatives]);
+  try {
+    await runGit(contentRoot, ["commit", "-m", message]);
+  } catch (error) {
+    if (await hasAnyStagedChanges(contentRoot, normalizedRelatives)) {
       throw error;
     }
   }

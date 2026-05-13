@@ -113,6 +113,10 @@ try {
     root.response.headers.get("content-type")?.includes("text/html"),
     "root route did not serve HTML",
   );
+  assert(
+    root.response.headers.get("content-security-policy")?.includes("frame-ancestors 'none'"),
+    "root route is missing the expected Content-Security-Policy",
+  );
   assert(root.text.includes('<div id="root">'), "root HTML does not look like the React app");
 
   const tree = await waitForJson(`${baseUrl}/api/pages/tree`);
@@ -123,6 +127,22 @@ try {
 
   const search = await waitForJson(`${baseUrl}/api/search?q=wiki`);
   assert(Array.isArray(search.items), "search endpoint did not return an items array");
+
+  const remoteOrigin = await fetch(`${baseUrl}/api/health`, {
+    headers: { Origin: "https://example.com" },
+  });
+  assert(remoteOrigin.status === 403, "remote Origin was not rejected");
+
+  const unguardedWrite = await fetch(`${baseUrl}/api/pages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      slug: "unguarded",
+      title: "Unguarded",
+      body: "should be blocked",
+    }),
+  });
+  assert(unguardedWrite.status === 403, "write without X-Wiki-Request was not rejected");
 
   console.log(`smoke ok: ${baseUrl}`);
 } catch (error) {

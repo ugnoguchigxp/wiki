@@ -9,9 +9,9 @@
 
 ### 実装状況
 - [x] **Localhost バインド**: API サーバーを `127.0.0.1` に固定。
-- [ ] **ポートの固定化**: 意図しないポート競合や公開を防ぐため、デフォルトポート（5173, 3000等）の使用を明確にする。
+- [x] **ポートの固定化**: デフォルトポートは `8787` に統一し、Vite dev server も `127.0.0.1:8787` / `strictPort` で起動する。
 
-### 計画
+### 実装メモ
 - 起動時に「localhost 以外からはアクセスできない」旨をログに明示する。
 
 ## 2. ファイルシステム保護 (Path Traversal)
@@ -29,20 +29,20 @@ Wiki の「スラグ（パス名）」に `../` などの特殊記号を混ぜ�
 Markdown 内に不正な `<script>` タグやイベントハンドラを埋め込み、閲覧者のブラウザで任意の JavaScript を実行されることを防ぐ。
 
 ### 実装状況
-- [x] **エディタ側でのガード**: `markdown-wysiwyg-editor` 内で `javascript:`, `data:` スキームの拒否や、不正な画像パスの読み込み制限を実施。
-- [ ] **サーバー側サニタイズ**: 保存前に HTML/Markdown をパースし、危険なタグを除去する工程の追加検討。
+- [x] **サーバー側サニタイズ**: 保存前に raw HTML を `sanitize-html` で無害化し、Markdown link/image の危険な URL scheme や相対パス脱出をブロックする。
+- [x] **エディタは信頼境界にしない**: `markdown-wysiwyg-editor` の表示/編集挙動に依存せず、保存処理で必ずサニタイズする。
 
 ## 4. リクエストの安全性 (CORS / CSRF)
 
 ### 目的
-悪意のあるサイト（例: `http://evil-site.com`）を開いた際に、そのサイトの JS が `http://localhost:3000` に対して勝手に書き込みリクエストを投げることを防ぐ。
+悪意のあるサイト（例: `http://evil-site.com`）を開いた際に、そのサイトの JS が `http://localhost:8787` に対して勝手に書き込みリクエストを投げることを防ぐ。
 
 ### 実装状況
-- [ ] **CORS オリジン制限**: 現在は `origin: "*"` となっている。
-- [ ] **カスタムヘッダーの要求**: API リクエストに対して特定のヘッダー（例: `X-Wiki-Request`）を要求することで、単純な HTML Form からの CSRF を防ぐ。
+- [x] **CORS オリジン制限**: `localhost`, `127.0.0.1`, `::1` のローカルOriginだけを許可する。
+- [x] **カスタムヘッダーの要求**: `POST` / `PUT` / `PATCH` / `DELETE` には `X-Wiki-Request: local` を必須にし、単純な HTML Form からの CSRF を防ぐ。
 
 ### 計画
-- `cors` 設定を `origin: "http://localhost:5173"`（フロントエンドのデフォルト）などに制限する。
+- 将来LAN共有を許可する場合は、認証/RBAC/CSRF token を追加するまで `0.0.0.0` バインドを解禁しない。
 
 ## 5. データ永続化とバックエンド保護
 
@@ -51,7 +51,15 @@ Git や SQLite を介したデータの改ざんや破壊を防ぐ。
 
 ### 実装状況
 - [x] **Git 履歴保持**: すべての変更を Git でコミットすることで、万が一の改ざん時も履歴から復元可能。
-- [ ] **SQLite のアクセス権**: DB ファイルのパーミッションを適切に設定する。
+- [x] **SQLite のアクセス権**: `.wiki` ディレクトリを `0700`、SQLite DB/WAL/SHMファイルを可能な限り `0600` に設定する。
+
+## 6. ブラウザ防御ヘッダー
+
+### 目的
+ローカルアプリであっても、意図しない埋め込み、MIME sniffing、外部送信を抑制する。
+
+### 実装状況
+- [x] **Security Headers**: `Content-Security-Policy`, `X-Content-Type-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy` を付与する。
 
 ---
 

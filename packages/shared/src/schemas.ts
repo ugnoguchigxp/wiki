@@ -24,6 +24,19 @@ export const pageTreeItemSchema = z.object({
 
 export type PageTreeItem = z.infer<typeof pageTreeItemSchema>;
 
+export const folderTreeItemSchema = z.object({
+  path: z.string(),
+});
+
+export type FolderTreeItem = z.infer<typeof folderTreeItemSchema>;
+
+export const pageTreeResponseSchema = z.object({
+  items: z.array(pageTreeItemSchema),
+  folders: z.array(folderTreeItemSchema).default([]),
+});
+
+export type PageTreeResponse = z.infer<typeof pageTreeResponseSchema>;
+
 export const pageDocumentSchema = z.object({
   slug: z.string(),
   title: z.string(),
@@ -42,6 +55,24 @@ export const pageMutationResponseSchema = z.object({
 });
 
 export type PageMutationResponse = z.infer<typeof pageMutationResponseSchema>;
+
+export const movedPageSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+});
+
+export type MovedPage = z.infer<typeof movedPageSchema>;
+
+export const folderMutationResponseSchema = z.object({
+  ok: z.literal(true),
+  path: z.string(),
+  from: z.string().optional(),
+  movedPages: z.array(movedPageSchema).optional(),
+  deletedSlugs: z.array(z.string()).optional(),
+  commit: z.string().nullable(),
+});
+
+export type FolderMutationResponse = z.infer<typeof folderMutationResponseSchema>;
 
 export const searchResultItemSchema = z.object({
   slug: z.string(),

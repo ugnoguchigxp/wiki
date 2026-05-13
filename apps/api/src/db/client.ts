@@ -43,12 +43,27 @@ const ensureCoreSchema = (db: Database.Database) => {
   `);
 };
 
+const chmodIfExists = async (targetPath: string, mode: number): Promise<void> => {
+  await fs.chmod(targetPath, mode).catch(() => undefined);
+};
+
+const hardenSqliteFilePermissions = async (databasePath: string): Promise<void> => {
+  await Promise.all([
+    chmodIfExists(databasePath, 0o600),
+    chmodIfExists(`${databasePath}-wal`, 0o600),
+    chmodIfExists(`${databasePath}-shm`, 0o600),
+  ]);
+};
+
 const createConnection = async (databasePath: string): Promise<DbClient> => {
-  await fs.mkdir(path.dirname(databasePath), { recursive: true });
+  const databaseDir = path.dirname(databasePath);
+  await fs.mkdir(databaseDir, { recursive: true, mode: 0o700 });
+  await fs.chmod(databaseDir, 0o700).catch(() => undefined);
   connection = new Database(databasePath);
   connection.pragma("journal_mode = WAL");
   connection.pragma("foreign_keys = ON");
   ensureCoreSchema(connection);
+  await hardenSqliteFilePermissions(databasePath);
   connectionPath = databasePath;
   client = drizzle(connection, { schema });
   return client;

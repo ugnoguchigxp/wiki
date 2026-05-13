@@ -1,9 +1,10 @@
 import type {
+  FolderMutationResponse,
   HealthResponse,
   PageDocument,
   PageHistoryItem,
   PageMutationResponse,
-  PageTreeItem,
+  PageTreeResponse,
   ReindexResponse,
   SearchResultItem,
 } from "@wiki/shared";
@@ -32,6 +33,7 @@ const sendJson = async <T>(path: string, method: "POST" | "PUT" | "DELETE", body
     method,
     headers: {
       "Content-Type": "application/json",
+      "X-Wiki-Request": "local",
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -46,10 +48,7 @@ const sendJson = async <T>(path: string, method: "POST" | "PUT" | "DELETE", body
 
 export const fetchHealth = () => getJson<HealthResponse>("/api/health");
 
-export const fetchPageTree = async (): Promise<PageTreeItem[]> => {
-  const data = await getJson<{ items: PageTreeItem[] }>("/api/pages/tree");
-  return data.items;
-};
+export const fetchPageTree = async (): Promise<PageTreeResponse> => getJson("/api/pages/tree");
 
 export const fetchPage = (slug: string) => getJson<PageDocument>(`/api/pages/${encodeSlug(slug)}`);
 
@@ -63,6 +62,7 @@ export const createPage = (payload: {
 export const updatePage = (
   slug: string,
   payload: {
+    slug?: string;
     title?: string;
     body: string;
     meta?: Record<string, unknown>;
@@ -72,6 +72,15 @@ export const updatePage = (
 
 export const deletePage = (slug: string) =>
   sendJson<PageMutationResponse>(`/api/pages/${encodeSlug(slug)}`, "DELETE");
+
+export const createFolder = (payload: { path: string }) =>
+  sendJson<FolderMutationResponse>("/api/folders", "POST", payload);
+
+export const renameFolder = (path: string, payload: { path: string }) =>
+  sendJson<FolderMutationResponse>(`/api/folders/${encodeSlug(path)}`, "PUT", payload);
+
+export const deleteFolder = (path: string) =>
+  sendJson<FolderMutationResponse>(`/api/folders/${encodeSlug(path)}`, "DELETE");
 
 export const searchPages = async (query: string): Promise<SearchResultItem[]> => {
   const encoded = encodeURIComponent(query.trim());

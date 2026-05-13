@@ -7,10 +7,15 @@ import { pages } from "../db/schema.js";
 import {
   commitDeleteChange,
   commitFileChange,
+  commitPathsChange,
+  createFolder,
+  deleteFolder,
   deletePage,
   getPageDiff,
   getPageHistory,
+  listFolders,
   readPage,
+  renameFolder,
   writePage,
 } from "../lib/content-repo.js";
 import { reindexAllPages, removePageIndex, searchPages, upsertPageIndex } from "../lib/indexing.js";
@@ -31,10 +36,19 @@ const writePageSchema = z.object({
 });
 
 const updatePageSchema = z.object({
+  slug: pageSlugSchema.optional(),
   title: z.string().min(1).optional(),
   body: z.string(),
   meta: z.record(z.string(), z.unknown()).optional(),
   commitMessage: z.string().min(1).optional(),
+});
+
+const folderPathSchema = pageSlugSchema.refine((value) => value !== "", {
+  message: "Invalid folder path",
+});
+
+const writeFolderSchema = z.object({
+  path: folderPathSchema,
 });
 
 const searchQuerySchema = z.object({
@@ -58,20 +72,144 @@ const invalidSlugResponse = (slug: string) => ({
 
 const isInvalidSlug = (slug: string): boolean => !isSafeSlug(slug);
 
+const invalidFolderResponse = (folderPath: string) => ({
+  message: "Invalid folder path",
+  path: folderPath,
+});
+
+const isInvalidFolderPath = (folderPath: string): boolean =>
+  folderPath === "" || !isSafeSlug(folderPath);
+
+const folderErrorStatus = (error: unknown): 400 | 404 | 409 => {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("already exists") || message.includes("conflicts")) {
+    return 409;
+  }
+  if (message.includes("not found") || message.includes("ENOENT")) {
+    return 404;
+  }
+  return 400;
+};
+
 export const registerPageRoutes = (app: Hono) => {
   app.get("/api/pages/tree", async (c) => {
     const db = await getDb();
-    const records = await db
-      .select({
-        slug: pages.slug,
-        title: pages.title,
-        path: pages.path,
-        updatedAt: pages.updatedAt,
-      })
-      .from(pages)
-      .orderBy(pages.slug);
+    const [records, folders] = await Promise.all([
+      db
+        .select({
+          slug: pages.slug,
+          title: pages.title,
+          path: pages.path,
+          updatedAt: pages.updatedAt,
+        })
+        .from(pages)
+        .orderBy(pages.slug),
+      listFolders(appConfig.contentRoot),
+    ]);
 
-    return c.json({ items: records });
+    return c.json({ items: records, folders });
+  });
+
+  app.get("/api/folders", async (c) => {
+    const folders = await listFolders(appConfig.contentRoot);
+    return c.json({ items: folders });
+  });
+
+  app.post("/api/folders", zValidator("json", writeFolderSchema), async (c) => {
+    const payload = c.req.valid("json");
+
+    try {
+      const created = await createFolder(appConfig.contentRoot, payload.path);
+      const commit = await commitFileChange(
+        appConfig.contentRoot,
+        created.keepFilePath,
+        `docs(folder): create ${created.path}`,
+      );
+
+      return c.json({
+        ok: true,
+        path: created.path,
+        commit,
+      });
+    } catch (error) {
+      return c.json(
+        {
+          message: error instanceof Error ? error.message : "Folder create failed",
+          path: payload.path,
+        },
+        folderErrorStatus(error),
+      );
+    }
+  });
+
+  app.put("/api/folders/*", zValidator("json", writeFolderSchema), async (c) => {
+    const folderPath = slugFromRequestPath(c.req.url, "/api/folders/");
+    if (isInvalidFolderPath(folderPath)) {
+      return c.json(invalidFolderResponse(folderPath), 400);
+    }
+
+    const payload = c.req.valid("json");
+    try {
+      const renamed = await renameFolder(appConfig.contentRoot, folderPath, payload.path);
+      const commit = await commitPathsChange(
+        appConfig.contentRoot,
+        [renamed.oldAbsolutePath, renamed.newAbsolutePath],
+        `docs(folder): rename ${renamed.from} to ${renamed.path}`,
+      );
+      const db = await getDb();
+      const reindex = await reindexAllPages(db, appConfig.contentRoot);
+
+      return c.json({
+        ok: true,
+        from: renamed.from,
+        path: renamed.path,
+        movedPages: renamed.movedPages,
+        commit,
+        reindex,
+      });
+    } catch (error) {
+      return c.json(
+        {
+          message: error instanceof Error ? error.message : "Folder rename failed",
+          path: folderPath,
+        },
+        folderErrorStatus(error),
+      );
+    }
+  });
+
+  app.delete("/api/folders/*", async (c) => {
+    const folderPath = slugFromRequestPath(c.req.url, "/api/folders/");
+    if (isInvalidFolderPath(folderPath)) {
+      return c.json(invalidFolderResponse(folderPath), 400);
+    }
+
+    try {
+      const deleted = await deleteFolder(appConfig.contentRoot, folderPath);
+      const commit = await commitPathsChange(
+        appConfig.contentRoot,
+        [deleted.absolutePath],
+        `docs(folder): delete ${deleted.path}`,
+      );
+      const db = await getDb();
+      const reindex = await reindexAllPages(db, appConfig.contentRoot);
+
+      return c.json({
+        ok: true,
+        path: deleted.path,
+        deletedSlugs: deleted.deletedSlugs,
+        commit,
+        reindex,
+      });
+    } catch (error) {
+      return c.json(
+        {
+          message: error instanceof Error ? error.message : "Folder delete failed",
+          path: folderPath,
+        },
+        folderErrorStatus(error),
+      );
+    }
   });
 
   app.get("/api/pages/*", async (c) => {
@@ -136,21 +274,50 @@ export const registerPageRoutes = (app: Hono) => {
     }
 
     const payload = c.req.valid("json");
+    const targetSlug = payload.slug ?? slug;
+    if (targetSlug !== slug) {
+      const targetExisting = await readPage(appConfig.contentRoot, targetSlug);
+      if (targetExisting) {
+        return c.json({ message: "Page already exists", slug: targetSlug }, 409);
+      }
+    }
+
     const title = payload.title ?? existing.title;
     const meta = payload.meta ?? existing.meta;
-    const { path, hash } = await writePage(appConfig.contentRoot, slug, title, payload.body, meta);
-    const commit = await commitFileChange(
+    const { path, hash } = await writePage(
       appConfig.contentRoot,
-      path,
-      payload.commitMessage ?? `docs(page): update ${slug || "home"}`,
+      targetSlug,
+      title,
+      payload.body,
+      meta,
+      targetSlug === slug ? { relativePath: existing.path } : undefined,
     );
 
-    const savedPage = await readPage(appConfig.contentRoot, slug);
+    let commit: string | null;
+    if (targetSlug === slug) {
+      commit = await commitFileChange(
+        appConfig.contentRoot,
+        path,
+        payload.commitMessage ?? `docs(page): update ${slug || "home"}`,
+      );
+    } else {
+      const deletedPath = await deletePage(appConfig.contentRoot, slug);
+      commit = await commitPathsChange(
+        appConfig.contentRoot,
+        [path, deletedPath],
+        payload.commitMessage ?? `docs(page): rename ${slug || "home"} to ${targetSlug || "home"}`,
+      );
+    }
+
+    const savedPage = await readPage(appConfig.contentRoot, targetSlug);
     if (!savedPage) {
-      return c.json({ message: "Page save verification failed", slug }, 500);
+      return c.json({ message: "Page save verification failed", slug: targetSlug }, 500);
     }
 
     const db = await getDb();
+    if (targetSlug !== slug) {
+      await removePageIndex(db, slug);
+    }
     await upsertPageIndex(db, savedPage, commit, hash);
 
     return c.json({

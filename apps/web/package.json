@@ -4,7 +4,7 @@
   "type": "module",
   "version": "0.0.0",
   "scripts": {
-    "dev": "vite --port 5173",
+    "dev": "vite --port 8787",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview",
     "lint": "biome check --formatter-enabled=false src vite.config.ts vitest.config.ts",
@@ -19,6 +19,7 @@
     "@wiki/shared": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "lucide-react": "^1.14.0",
     "markdown-wysiwyg-editor": "^0.3.7",
     "mermaid": "^11.12.0",
     "react": "^19.2.0",
@@ -26,11 +27,13 @@
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
+    "@hono/vite-dev-server": "^0.25.3",
     "@tailwindcss/vite": "^4.1.17",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.0",
+    "hono": "^4.12.18",
     "jsdom": "^26.1.0",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",

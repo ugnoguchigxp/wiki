@@ -19,7 +19,7 @@ const bootstrap = async () => {
     console.error("wiki-api index bootstrap failed", error);
   }
 
-  const app = createApp();
+  const app = createApp({ runSetup: false });
   serve(
     {
       fetch: app.fetch,
@@ -27,7 +27,9 @@ const bootstrap = async () => {
       hostname: "127.0.0.1",
     },
     (info) => {
-      console.log(`wiki-api listening on http://localhost:${info.port}`);
+      console.log(
+        `wiki-api listening on http://127.0.0.1:${info.port} (localhost only; not exposed to LAN)`,
+      );
     },
   );
 };
